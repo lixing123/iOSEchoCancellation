@@ -7,6 +7,7 @@
 //
 
 #import "ViewController.h"
+#import <AVFoundation/AVFoundation.h>
 
 #define BUFFER_COUNT 10
 
@@ -100,9 +101,10 @@ OSStatus InputCallback(void *inRefCon,
     [super viewDidLoad];
     
     //Initialize currentBufferPointer
-    //-1 means we haven't used the bufferList
     currentBufferPointer = 0;
     callbackCount = 0;
+    
+    [self setupSession];
     
     //Set up a RemoteIO for synchronously playback
     AudioComponentDescription inputcd = {0};
@@ -177,6 +179,12 @@ OSStatus InputCallback(void *inRefCon,
     //Initialize the unit and start
     AudioUnitInitialize(remoteIOUnit);
     AudioOutputUnitStart(remoteIOUnit);
+}
+
+-(void)setupSession{
+    AVAudioSession* session = [AVAudioSession sharedInstance];
+    [session overrideOutputAudioPort:AVAudioSessionPortOverrideSpeaker error:nil];
+    [session setActive:YES error:nil];
 }
 
 - (void)didReceiveMemoryWarning {
