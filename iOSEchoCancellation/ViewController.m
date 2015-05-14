@@ -8,6 +8,12 @@
 
 #import "ViewController.h"
 
+#define BUFFER_COUNT 10
+
+AudioBuffer recordedBuffers[BUFFER_COUNT];//Used to save audio data
+int         currentBufferPointer;//Pointer to the current buffer
+int         callbackCount;
+
 static void CheckError(OSStatus error, const char *operation)
 {
     if (error == noErr) return;
@@ -43,8 +49,25 @@ OSStatus InputCallback(void *inRefCon,
                                ioData),
                "AudioUnitRender failed");
     
-    //Do LSM noise control
+    //save audio to ring buffer and load from ring buffer
     AudioBuffer buffer = ioData->mBuffers[0];
+    recordedBuffers[currentBufferPointer].mNumberChannels = buffer.mNumberChannels;
+    recordedBuffers[currentBufferPointer].mDataByteSize = buffer.mDataByteSize;
+    free(recordedBuffers[currentBufferPointer].mData);
+    recordedBuffers[currentBufferPointer].mData = malloc(sizeof(SInt16)*buffer.mDataByteSize);
+    memcpy(recordedBuffers[currentBufferPointer].mData,
+           buffer.mData,
+           buffer.mDataByteSize);
+    currentBufferPointer = (currentBufferPointer+1)%BUFFER_COUNT;
+    
+    if (callbackCount>=BUFFER_COUNT) {
+        memcpy(buffer.mData,
+               recordedBuffers[currentBufferPointer].mData,
+               buffer.mDataByteSize);
+    }
+    callbackCount++;
+    
+    /*
     SInt16 sample = 0;
     int currentFrame = 0;
     UInt32 bytesPerChannel = controller.streamFormat.mBytesPerFrame/controller.streamFormat.mChannelsPerFrame;
@@ -55,14 +78,12 @@ OSStatus InputCallback(void *inRefCon,
                    buffer.mData+(currentFrame*controller.streamFormat.mBytesPerFrame) + currentChannel*bytesPerChannel,
                    sizeof(sample));
             
-            
-            
             memcpy(buffer.mData+(currentFrame*controller.streamFormat.mBytesPerFrame) + currentChannel*bytesPerChannel,
                    &sample,
                    sizeof(sample));
         }
         currentFrame++;
-    }
+    }*/
     
     return noErr;
 }
@@ -78,7 +99,12 @@ OSStatus InputCallback(void *inRefCon,
 - (void)viewDidLoad {
     [super viewDidLoad];
     
-    //Set up a RemoteIO to synchronously playback
+    //Initialize currentBufferPointer
+    //-1 means we haven't used the bufferList
+    currentBufferPointer = 0;
+    callbackCount = 0;
+    
+    //Set up a RemoteIO for synchronously playback
     AudioComponentDescription inputcd = {0};
     inputcd.componentType = kAudioUnitType_Output;
     inputcd.componentSubType = kAudioUnitSubType_RemoteIO;
@@ -110,23 +136,7 @@ OSStatus InputCallback(void *inRefCon,
                                     sizeof(enableFlag)),
                "Open output of bus 0 failed");
     
-    //Connect output of input bus to input of output bus
-    //This will easily playback to the output speaker
-    //But we will set the render callback, so we'll not use this function
-    /*
-     AudioUnitConnection connection;
-     connection.sourceAudioUnit = remoteIOUnit;
-     connection.sourceOutputNumber = 1;
-     connection.destInputNumber = 0;
-     CheckError(AudioUnitSetProperty(remoteIOUnit,
-     kAudioUnitProperty_MakeConnection,
-     kAudioUnitScope_Input,
-     0,
-     &connection,
-     sizeof(connection)),
-     "kAudioUnitProperty_MakeConnection failed");
-     */
-    
+    //Set up stream format for input and output
     streamFormat.mFormatID = kAudioFormatLinearPCM;
     streamFormat.mFormatFlags = kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked;
     streamFormat.mSampleRate = 44100;
@@ -152,6 +162,7 @@ OSStatus InputCallback(void *inRefCon,
                                     sizeof(streamFormat)),
                "kAudioUnitProperty_StreamFormat of bus 1 failed");
     
+    //Set up input callback
     AURenderCallbackStruct input;
     input.inputProc = InputCallback;
     input.inputProcRefCon = (__bridge void *)(self);
