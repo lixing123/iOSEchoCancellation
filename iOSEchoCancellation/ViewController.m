@@ -9,7 +9,14 @@
 #import "ViewController.h"
 #import <AVFoundation/AVFoundation.h>
 
-#define BUFFER_COUNT 10
+typedef struct MyAUGraphStruct{
+    AUGraph graph;
+    AudioUnit remoteIOUnit;
+} MyAUGraphStruct;
+
+#define BUFFER_COUNT 15
+
+MyAUGraphStruct myStruct;
 
 AudioBuffer recordedBuffers[BUFFER_COUNT];//Used to save audio data
 int         currentBufferPointer;//Pointer to the current buffer
@@ -39,10 +46,10 @@ OSStatus InputCallback(void *inRefCon,
                        UInt32 inNumberFrames,
                        AudioBufferList *ioData){
     //TODO: implement this function
-    ViewController* controller = (__bridge ViewController*)inRefCon;
+    MyAUGraphStruct* myStruct = (MyAUGraphStruct*)inRefCon;
     
     //Get samples from input bus(bus 1)
-    CheckError(AudioUnitRender(controller.remoteIOUnit,
+    CheckError(AudioUnitRender(myStruct->remoteIOUnit,
                                ioActionFlags,
                                inTimeStamp,
                                1,
@@ -95,7 +102,7 @@ OSStatus InputCallback(void *inRefCon,
 
 @implementation ViewController
 
-@synthesize remoteIOUnit,streamFormat;
+@synthesize streamFormat;
 
 - (void)viewDidLoad {
     [super viewDidLoad];
@@ -106,22 +113,16 @@ OSStatus InputCallback(void *inRefCon,
     
     [self setupSession];
     
-    //Set up a RemoteIO for synchronously playback
-    AudioComponentDescription inputcd = {0};
-    inputcd.componentType = kAudioUnitType_Output;
-    inputcd.componentSubType = kAudioUnitSubType_RemoteIO;
-    inputcd.componentManufacturer = kAudioUnitManufacturer_Apple;
+    [self createAUGraph:&myStruct];
     
-    AudioComponent comp = AudioComponentFindNext(NULL,
-                                                 &inputcd);
-    
-    CheckError(AudioComponentInstanceNew(comp,
-                                         &remoteIOUnit),
-               "AudioComponentInstanceNew failed");
-    
+    [self setupRemoteIOUnit:&myStruct];
+}
+
+-(void)setupRemoteIOUnit:(MyAUGraphStruct*)myStruct{
+    //Set up audio unit
     //Open input of the bus 1(input mic)
     UInt32 enableFlag = 1;
-    CheckError(AudioUnitSetProperty(remoteIOUnit,
+    CheckError(AudioUnitSetProperty(myStruct->remoteIOUnit,
                                     kAudioOutputUnitProperty_EnableIO,
                                     kAudioUnitScope_Input,
                                     1,
@@ -130,7 +131,7 @@ OSStatus InputCallback(void *inRefCon,
                "Open input of bus 1 failed");
     
     //Open output of bus 0(output speaker)
-    CheckError(AudioUnitSetProperty(remoteIOUnit,
+    CheckError(AudioUnitSetProperty(myStruct->remoteIOUnit,
                                     kAudioOutputUnitProperty_EnableIO,
                                     kAudioUnitScope_Output,
                                     0,
@@ -148,7 +149,7 @@ OSStatus InputCallback(void *inRefCon,
     streamFormat.mBitsPerChannel = 16;
     streamFormat.mChannelsPerFrame = 1;
     
-    CheckError(AudioUnitSetProperty(remoteIOUnit,
+    CheckError(AudioUnitSetProperty(myStruct->remoteIOUnit,
                                     kAudioUnitProperty_StreamFormat,
                                     kAudioUnitScope_Input,
                                     0,
@@ -156,7 +157,7 @@ OSStatus InputCallback(void *inRefCon,
                                     sizeof(streamFormat)),
                "kAudioUnitProperty_StreamFormat of bus 0 failed");
     
-    CheckError(AudioUnitSetProperty(remoteIOUnit,
+    CheckError(AudioUnitSetProperty(myStruct->remoteIOUnit,
                                     kAudioUnitProperty_StreamFormat,
                                     kAudioUnitScope_Output,
                                     1,
@@ -167,8 +168,8 @@ OSStatus InputCallback(void *inRefCon,
     //Set up input callback
     AURenderCallbackStruct input;
     input.inputProc = InputCallback;
-    input.inputProcRefCon = (__bridge void *)(self);
-    CheckError(AudioUnitSetProperty(remoteIOUnit,
+    input.inputProcRefCon = myStruct;
+    CheckError(AudioUnitSetProperty(myStruct->remoteIOUnit,
                                     kAudioUnitProperty_SetRenderCallback,
                                     kAudioUnitScope_Global,
                                     0,//input mic
@@ -176,9 +177,47 @@ OSStatus InputCallback(void *inRefCon,
                                     sizeof(input)),
                "kAudioUnitProperty_SetRenderCallback failed");
     
-    //Initialize the unit and start
-    AudioUnitInitialize(remoteIOUnit);
-    AudioOutputUnitStart(remoteIOUnit);
+    CheckError(AUGraphInitialize(myStruct->graph),
+               "AUGraphInitialize failed");
+    
+    CheckError(AUGraphStart(myStruct->graph),
+               "AUGraphStart failed");
+}
+
+-(void)createAUGraph:(MyAUGraphStruct*)myStruct{
+    //Create graph
+    CheckError(NewAUGraph(&myStruct->graph),
+               "NewAUGraph failed");
+    
+    //Create nodes and add to the graph
+    //Set up a RemoteIO for synchronously playback
+    AudioComponentDescription inputcd = {0};
+    inputcd.componentType = kAudioUnitType_Output;
+    inputcd.componentSubType = kAudioUnitSubType_RemoteIO;
+    inputcd.componentManufacturer = kAudioUnitManufacturer_Apple;
+
+    
+    AUNode remoteIONode;
+    //Add node to the graph
+    CheckError(AUGraphAddNode(myStruct->graph,
+                              &inputcd,
+                              &remoteIONode),
+               "AUGraphAddNode failed");
+    
+    //Open the graph
+    CheckError(AUGraphOpen(myStruct->graph),
+               "AUGraphOpen failed");
+    
+    //Get reference to the node
+    CheckError(AUGraphNodeInfo(myStruct->graph,
+                               remoteIONode,
+                               &inputcd,
+                               &myStruct->remoteIOUnit),
+               "AUGraphNodeInfo failed");
+}
+
+-(void)createRemoteIONodeToGraph:(AUGraph*)graph{
+    
 }
 
 -(void)setupSession{
