@@ -116,10 +116,46 @@ OSStatus InputCallback(void *inRefCon,
     [self createAUGraph:&myStruct];
     
     [self setupRemoteIOUnit:&myStruct];
+    
+    [self startGraph:myStruct.graph];
+    
+    [self addControlButton];
+}
+
+-(void)addControlButton{
+    UIButton* button = [UIButton buttonWithType:UIButtonTypeRoundedRect];
+    button.frame = CGRectMake(100, 100, 100, 50);
+    [button setTitle:@"开启回声抵消" forState:UIControlStateNormal];
+    [button addTarget:self action:@selector(openOrCloseEchoCancellation) forControlEvents:UIControlEventTouchUpInside];
+    [self.view addSubview:button];
+}
+
+-(void)openOrCloseEchoCancellation{
+    //TODO:Add open/close echo cancellation function
+    AudioComponentDescription inputcd = {0};
+    inputcd.componentType = kAudioUnitType_Output;
+    //inputcd.componentSubType = kAudioUnitSubType_RemoteIO;
+    inputcd.componentSubType = kAudioUnitSubType_VoiceProcessingIO;
+    inputcd.componentManufacturer = kAudioUnitManufacturer_Apple;
+    
+    AUNode remoteIONode;
+    CheckError(AUGraphGetIndNode(myStruct.graph,
+                                 0,
+                                 &remoteIONode),
+               "AUGraphGetIndNode failed");
+    
+    
+}
+
+-(void)startGraph:(AUGraph)graph{
+    CheckError(AUGraphInitialize(graph),
+               "AUGraphInitialize failed");
+    
+    CheckError(AUGraphStart(graph),
+               "AUGraphStart failed");
 }
 
 -(void)setupRemoteIOUnit:(MyAUGraphStruct*)myStruct{
-    //Set up audio unit
     //Open input of the bus 1(input mic)
     UInt32 enableFlag = 1;
     CheckError(AudioUnitSetProperty(myStruct->remoteIOUnit,
@@ -176,12 +212,6 @@ OSStatus InputCallback(void *inRefCon,
                                     &input,
                                     sizeof(input)),
                "kAudioUnitProperty_SetRenderCallback failed");
-    
-    CheckError(AUGraphInitialize(myStruct->graph),
-               "AUGraphInitialize failed");
-    
-    CheckError(AUGraphStart(myStruct->graph),
-               "AUGraphStart failed");
 }
 
 -(void)createAUGraph:(MyAUGraphStruct*)myStruct{
@@ -194,8 +224,8 @@ OSStatus InputCallback(void *inRefCon,
     AudioComponentDescription inputcd = {0};
     inputcd.componentType = kAudioUnitType_Output;
     inputcd.componentSubType = kAudioUnitSubType_RemoteIO;
+    inputcd.componentSubType = kAudioUnitSubType_VoiceProcessingIO;
     inputcd.componentManufacturer = kAudioUnitManufacturer_Apple;
-
     
     AUNode remoteIONode;
     //Add node to the graph
