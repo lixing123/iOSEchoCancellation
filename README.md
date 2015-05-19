@@ -1,3 +1,3 @@
 # iOSEchoCancellation
 
-An example of Realtime record and playback with echo cancellation
+An example of Realtime record and playback with/without echo cancellation
