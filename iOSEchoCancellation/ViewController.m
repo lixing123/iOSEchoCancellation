@@ -124,27 +124,38 @@ OSStatus InputCallback(void *inRefCon,
 
 -(void)addControlButton{
     UIButton* button = [UIButton buttonWithType:UIButtonTypeRoundedRect];
-    button.frame = CGRectMake(100, 100, 100, 50);
-    [button setTitle:@"开启回声抵消" forState:UIControlStateNormal];
-    [button addTarget:self action:@selector(openOrCloseEchoCancellation) forControlEvents:UIControlEventTouchUpInside];
+    button.frame = CGRectMake(60, 60, 200, 50);
+    [button setTitle:@"Echo cancellation is open" forState:UIControlStateNormal];
+    [button.titleLabel setTextAlignment:NSTextAlignmentCenter];
+    [button addTarget:self action:@selector(openOrCloseEchoCancellation:) forControlEvents:UIControlEventTouchUpInside];
     [self.view addSubview:button];
 }
 
--(void)openOrCloseEchoCancellation{
-    //TODO:Add open/close echo cancellation function
-    AudioComponentDescription inputcd = {0};
-    inputcd.componentType = kAudioUnitType_Output;
-    //inputcd.componentSubType = kAudioUnitSubType_RemoteIO;
-    inputcd.componentSubType = kAudioUnitSubType_VoiceProcessingIO;
-    inputcd.componentManufacturer = kAudioUnitManufacturer_Apple;
+-(void)openOrCloseEchoCancellation:(UIButton*)button{
+    UInt32 echoCancellation;
+    UInt32 size = sizeof(echoCancellation);
+    CheckError(AudioUnitGetProperty(myStruct.remoteIOUnit,
+                                    kAUVoiceIOProperty_BypassVoiceProcessing,
+                                    kAudioUnitScope_Global,
+                                    0,
+                                    &echoCancellation,
+                                    &size),
+               "kAUVoiceIOProperty_BypassVoiceProcessing failed");
+    if (echoCancellation==0) {
+        echoCancellation = 1;
+    }else{
+        echoCancellation = 0;
+    }
     
-    AUNode remoteIONode;
-    CheckError(AUGraphGetIndNode(myStruct.graph,
-                                 0,
-                                 &remoteIONode),
-               "AUGraphGetIndNode failed");
+    CheckError(AudioUnitSetProperty(myStruct.remoteIOUnit,
+                                    kAUVoiceIOProperty_BypassVoiceProcessing,
+                                    kAudioUnitScope_Global,
+                                    0,
+                                    &echoCancellation,
+                                    sizeof(echoCancellation)),
+               "AudioUnitSetProperty kAUVoiceIOProperty_BypassVoiceProcessing failed");
     
-    
+    [button setTitle:echoCancellation==0?@"Echo cancellation is open":@"Echo cancellation is closed" forState:UIControlStateNormal];
 }
 
 -(void)startGraph:(AUGraph)graph{
@@ -223,7 +234,8 @@ OSStatus InputCallback(void *inRefCon,
     //Set up a RemoteIO for synchronously playback
     AudioComponentDescription inputcd = {0};
     inputcd.componentType = kAudioUnitType_Output;
-    inputcd.componentSubType = kAudioUnitSubType_RemoteIO;
+    //inputcd.componentSubType = kAudioUnitSubType_RemoteIO;
+    //we can access the system's echo cancellation by using kAudioUnitSubType_VoiceProcessingIO subtype
     inputcd.componentSubType = kAudioUnitSubType_VoiceProcessingIO;
     inputcd.componentManufacturer = kAudioUnitManufacturer_Apple;
     
